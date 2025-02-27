@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
+import { useNavigate } from "react-router-dom";
 
 export default function Home({ user, refreshUser }) {  // ✅ Pass user & refreshUser as props
     const [lotNumber, setLotNumber] = useState("");
@@ -7,15 +8,17 @@ export default function Home({ user, refreshUser }) {  // ✅ Pass user & refres
     const [selectedMP, setSelectedMP] = useState(null);
     const [error, setError] = useState("");
     const [activeBuild, setActiveBuild] = useState(null);
+    const navigate = useNavigate();
 
     // ✅ Fetch active build when user logs in or a build starts
     useEffect(() => {
-        if (user) {
-            fetchActiveBuild(user.username);
-        } else {
-            setActiveBuild(null); // ✅ Reset when user logs out
-        }
-    }, [user]); // ✅ UI updates when `user` state changes
+      if (user) {
+          fetchActiveBuild(user.username);
+      } else {
+          setActiveBuild(null); // ✅ Reset when user logs out
+      }
+  }, [user]); // ✅ Ensures UI refreshes when user state changes
+  
 
     // ✅ Fetch active build from backend
     const fetchActiveBuild = async (username) => {
@@ -82,7 +85,10 @@ export default function Home({ user, refreshUser }) {  // ✅ Pass user & refres
             {user ? (
                 activeBuild ? (
                     // ✅ Show active build if running
-                    <div className="bg-gray-100 p-4 rounded-lg shadow-md">
+                    <div
+                    className="bg-gray-100 p-4 rounded-lg shadow-md cursor-pointer hover:bg-gray-200"
+                    onClick={() => navigate("/spc-tracking-app/active-build")}
+                  >
                         <h2 className="text-lg font-bold">Current Active Build</h2>
                         <p><strong>Lot Number:</strong> {activeBuild.lot_number}</p>
                         <p><strong>Configuration:</strong> {activeBuild.config_number}</p>

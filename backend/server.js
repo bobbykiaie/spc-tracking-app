@@ -271,23 +271,26 @@ app.post('/start_build', (req, res) => {
 
 
 // ✅ End a Build
-app.post('/end_build', (req, res) => {
-    const { user_id } = req.body;
-    if (!user_id) {
-        return res.status(400).json({ error: "User ID is required" });
-    }
 
-    const query = `DELETE FROM active_builds WHERE user_id = ?`;
 
-    db.run(query, [user_id], function (err) {
+// ✅ Get Active Builds
+app.get('/active_builds/:username', (req, res) => {
+    const { username } = req.params;
+
+    const query = `
+        SELECT build_id, username, lot_number, config_number, mp_number, start_time
+        FROM active_builds
+        WHERE username = ?;
+    `;
+
+    db.get(query, [username], (err, row) => {
         if (err) {
             return res.status(500).json({ error: err.message });
         }
-        res.json({ message: `✅ Build ended for User ${user_id}` });
+        res.json(row || null);
     });
 });
-
-// ✅ Get Active Builds
+// ✅ Get All Active Builds
 app.get('/active_builds', (req, res) => {
     const query = `
         SELECT build_id, username, lot_number, config_number, mp_number, start_time
@@ -301,6 +304,34 @@ app.get('/active_builds', (req, res) => {
         res.json(rows);
     });
 });
+
+// ✅ End a Build by Username
+// ✅ Corrected End Build API
+app.post('/end_build', (req, res) => {
+    const { username } = req.body;  // ✅ Use username instead of user_id
+
+    if (!username) {
+        return res.status(400).json({ error: "Username is required" });
+    }
+
+    const query = `DELETE FROM active_builds WHERE username = ?`;
+
+    db.run(query, [username], function (err) {
+        if (err) {
+            console.error("❌ Error ending build:", err.message);
+            return res.status(500).json({ error: err.message });
+        }
+
+        if (this.changes === 0) {
+            return res.status(404).json({ error: "No active build found for this user." });
+        }
+
+        res.json({ message: `✅ Build ended for User ${username}` });
+    });
+});
+
+
+
 
 // ✅ Start Server
 app.listen(PORT, () => {

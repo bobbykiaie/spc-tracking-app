@@ -8,6 +8,7 @@ import SPCData from "./components/SPCData";
 import BuildPage from "./components/BuildPage";
 import EngineerDashboard from "./components/EngineerDashboard";
 import Login from "./components/Login";
+import ActiveBuild from "./components/ActiveBuild";
 
 function App() {
   const [user, setUser] = useState(null);
@@ -38,6 +39,7 @@ function App() {
           <Route path="/spc-tracking-app/dashboard" element={<EngineerDashboard />} />
           <Route path="/spc-tracking-app/login" element={<Login refreshUser={refreshUser} />} />
           <Route path="/spc-tracking-app/build/:config_number/:mp_number" element={<BuildPage />} />
+          <Route path="/spc-tracking-app/active-build" element={<ActiveBuild user={user} refreshUser={refreshUser} />} />
         </Routes>
       </div>
     </Router>
