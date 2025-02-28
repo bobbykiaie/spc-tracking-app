@@ -5,9 +5,9 @@ import App from './App.jsx'
 import { BuildDataProvider } from './components/BuildDataContext.jsx'
 
 createRoot(document.getElementById('root')).render(
-  <StrictMode>
+
     <BuildDataProvider>
     <App />
     </BuildDataProvider>
-  </StrictMode>,
+
 )
