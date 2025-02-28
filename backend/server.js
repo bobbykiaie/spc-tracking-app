@@ -120,6 +120,29 @@ app.post('/login', async (req, res) => {
     });
 });
 
+app.get("/inspection_logs/:lot_number/:mp_number", (req, res) => {
+    const { lot_number, mp_number } = req.params;
+
+    const query = `
+        SELECT * FROM inspection_logs 
+        WHERE lot_number = ? AND mp_number = ?
+        ORDER BY unit_number ASC
+    `;
+
+    db.all(query, [lot_number, mp_number], (err, rows) => {
+        if (err) {
+            console.error("❌ Error fetching inspection logs:", err);
+            return res.status(500).json({ error: "Internal server error" });
+        }
+        if (rows.length === 0) {
+            console.log("⚠️ No inspections found for this lot.");
+            return res.json([]); // Return empty array instead of 404
+        }
+        console.log("✅ Fetched inspection logs:", rows);
+        res.json(rows);
+    });
+});
+
 // ✅ Get Current Logged-in User
 app.get('/current_user', (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "http://localhost:5173");
@@ -267,6 +290,136 @@ app.post('/start_build', (req, res) => {
     });
 });
 
+app.get('/specs/by-config-mp/:config_number/:mp_number', (req, res) => {
+    const { config_number, mp_number } = req.params;
+
+    const query = `
+        SELECT spec_name, type, upper_spec, lower_spec, nominal, attribute_value
+        FROM config_mp_specs
+        WHERE config_number = ? AND mp_number = ?;
+    `;
+
+    db.all(query, [config_number, mp_number], (err, rows) => {
+        if (err) {
+            res.status(500).json({ error: err.message });
+            return;
+        }
+        if (rows.length === 0) {
+            res.status(404).json({ error: "No specifications found for this configuration and MP." });
+            return;
+        }
+        res.json(rows);
+    });
+});
+
+
+
+
+// ✅ Log Inspection
+app.post("/log_inspection", (req, res) => {
+    const { username, lot_number, config_number, mp_number, spec_name, inspection_type, unit_number, inspection_value } = req.body;
+
+    // ✅ Step 1: Fetch the spec details to determine pass/fail
+    const getSpecQuery = `
+        SELECT * FROM config_mp_specs 
+        WHERE config_number = ? AND mp_number = ? AND spec_name = ?
+    `;
+
+    db.get(getSpecQuery, [config_number, mp_number, spec_name], (err, spec) => {
+        if (err) {
+            console.error("❌ Error fetching spec:", err);
+            return res.status(500).json({ error: "Database error fetching spec" });
+        }
+
+        if (!spec) {
+            return res.status(400).json({ error: "Spec not found" });
+        }
+
+        let pass_fail = "Fail";
+        let final_inspection_value = inspection_value; // Default to input value
+
+        if (inspection_type === "Variable") {
+            // ✅ Determine pass/fail based on upper & lower specs
+            const lowerSpec = spec.lower_spec !== null ? spec.lower_spec : -Infinity;
+            const upperSpec = spec.upper_spec !== null ? spec.upper_spec : Infinity;
+
+            if (inspection_value >= lowerSpec && inspection_value <= upperSpec) {
+                pass_fail = "Pass";
+            }
+        } else if (inspection_type === "Attribute") {
+            // ✅ Ensure both values exist before trimming & comparing
+            const expectedValue = spec.attribute_value ? spec.attribute_value.toString().trim().toLowerCase() : "";
+            const receivedValue = inspection_value ? inspection_value.toString().trim().toLowerCase() : "";
+
+            pass_fail = receivedValue === expectedValue ? "Pass" : "Fail";
+            final_inspection_value = inspection_value; // Keep user input
+        }
+
+        // ✅ Step 2: Check if an inspection for this unit/spec already exists
+        const checkQuery = `
+            SELECT * FROM inspection_logs 
+            WHERE lot_number = ? AND unit_number = ? AND spec_name = ? AND mp_number = ?
+        `;
+
+        db.get(checkQuery, [lot_number, unit_number, spec_name, mp_number], (err, row) => {
+            if (err) {
+                console.error("❌ Error checking inspection log:", err);
+                return res.status(500).json({ error: "Database error" });
+            }
+
+            if (row) {
+                // ✅ Update existing inspection
+                const updateQuery = `
+                    UPDATE inspection_logs 
+                    SET username = ?, inspection_value = ?, pass_fail = ?, timestamp = CURRENT_TIMESTAMP
+                    WHERE lot_number = ? AND unit_number = ? AND spec_name = ? AND mp_number = ?
+                `;
+
+                db.run(updateQuery, [username, final_inspection_value, pass_fail, lot_number, unit_number, spec_name, mp_number], (updateErr) => {
+                    if (updateErr) {
+                        console.error("❌ Error updating inspection:", updateErr);
+                        return res.status(500).json({ error: "Failed to update inspection" });
+                    }
+                    console.log("✅ Inspection updated successfully with result:", pass_fail);
+                    res.json({ success: true, pass_fail });
+                });
+            } else {
+                // ✅ Insert new inspection
+                const insertQuery = `
+                    INSERT INTO inspection_logs (username, lot_number, config_number, mp_number, spec_name, inspection_type, unit_number, inspection_value, pass_fail, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                `;
+
+                db.run(insertQuery, [username, lot_number, config_number, mp_number, spec_name, inspection_type, unit_number, final_inspection_value, pass_fail], function (insertErr) {
+                    if (insertErr) {
+                        console.error("❌ Error inserting inspection:", insertErr);
+                        return res.status(500).json({ error: "Failed to log inspection" });
+                    }
+                    console.log("✅ Inspection logged successfully with result:", pass_fail);
+                    res.json({ success: true, pass_fail });
+                });
+            }
+        });
+    });
+});
+
+
+// ✅ Get Lot Details by Lot Number
+app.get('/lots/:lot_number', (req, res) => {
+    const { lot_number } = req.params;
+
+    const query = `SELECT lot_number, ys_number, config_number, quantity FROM lots WHERE lot_number = ?`;
+
+    db.get(query, [lot_number], (err, row) => {
+        if (err) {
+            return res.status(500).json({ error: err.message });
+        }
+        if (!row) {
+            return res.status(404).json({ error: "Lot not found" });
+        }
+        res.json(row);
+    });
+});
 
 
 
