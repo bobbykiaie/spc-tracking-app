@@ -1,14 +1,21 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import axios from "axios";
+import { SampleContext } from "./SampleContext"; // Adjust path as needed
 
 export default function ActiveBuild({ user, refreshUser }) {
+    const { selectedSample, setSelectedSample } = useContext(SampleContext);
     const [activeBuild, setActiveBuild] = useState(null);
     const [lotDetails, setLotDetails] = useState(null);
     const [specs, setSpecs] = useState([]);
     const [inspections, setInspections] = useState([]);
-    const [selectedSample, setSelectedSample] = useState(1);
     const [inspectionValues, setInspectionValues] = useState({});
     const [passFailValues, setPassFailValues] = useState({});
+
+    // Log mount to confirm component lifecycle
+    useEffect(() => {
+        console.log("ActiveBuild mounted or updated at", new Date().toISOString());
+        return () => console.log("ActiveBuild unmounted at", new Date().toISOString());
+    }, []);
 
     useEffect(() => {
         if (user) {
@@ -41,7 +48,6 @@ export default function ActiveBuild({ user, refreshUser }) {
         try {
             const response = await axios.get(`http://localhost:5000/active_builds/${username}`);
             setActiveBuild(response.data);
-
             if (response.data) {
                 fetchLotDetails(response.data.lot_number);
                 fetchSpecs(response.data.config_number, response.data.mp_number);
@@ -71,27 +77,50 @@ export default function ActiveBuild({ user, refreshUser }) {
         }
     };
 
-    const handleLogInspection = async (spec) => {
+    const handleLogInspection = async (spec, event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        console.log("Log Inspection clicked at", new Date().toISOString());
+    
         const inspectionType = spec.type;
         const inspectionValue = inspectionType === "Variable" ? parseFloat(inspectionValues[spec.spec_name]) : null;
-        const passFail = inspectionType === "Attribute" ? passFailValues[spec.spec_name] || "Pass" : null; // Ensure pass/fail is not null
-
+        const passFail = inspectionType === "Attribute" ? passFailValues[spec.spec_name] || "Pass" : null;
+    
         try {
-            await axios.post("http://localhost:5000/log_inspection", {
-                username: user.username,
-                lot_number: activeBuild.lot_number,
-                config_number: activeBuild.config_number,
-                mp_number: activeBuild.mp_number,
-                spec_name: spec.spec_name,
-                inspection_type: inspectionType,
-                unit_number: selectedSample,
-                inspection_value: inspectionType === "Attribute" ? passFail : inspectionValue, // Attribute: Save Pass/Fail
-                pass_fail: passFail, // Ensure Pass/Fail is logged
+            console.log("Sending POST to /log_inspection...");
+            const response = await axios.post(
+                "http://localhost:5000/log_inspection",
+                {
+                    username: user.username,
+                    lot_number: activeBuild.lot_number,
+                    config_number: activeBuild.config_number,
+                    mp_number: activeBuild.mp_number,
+                    spec_name: spec.spec_name,
+                    inspection_type: inspectionType,
+                    unit_number: selectedSample,
+                    inspection_value: inspectionType === "Attribute" ? passFail : inspectionValue,
+                    pass_fail: passFail,
+                },
+                { withCredentials: true } // Ensure cookies are sent
+            );
+            console.log("POST response:", response.data);
+    
+            setInspections(prevInspections => {
+                const updatedInspections = prevInspections.filter(ins =>
+                    !(ins.unit_number === selectedSample && ins.spec_name === spec.spec_name)
+                );
+                return [...updatedInspections, {
+                    unit_number: selectedSample,
+                    spec_name: spec.spec_name,
+                    pass_fail: passFail
+                }];
             });
-
-            await fetchInspectionLogs();
         } catch (error) {
-            console.error("Error logging inspection:", error);
+            console.error("❌ Error logging inspection:", error);
+            if (error.response) {
+                console.error("Response data:", error.response.data);
+                console.error("Response status:", error.response.status);
+            }
         }
     };
 
@@ -108,7 +137,6 @@ export default function ActiveBuild({ user, refreshUser }) {
                         <p><strong>Manufacturing Procedure:</strong> {activeBuild.mp_number}</p>
                         {lotDetails && <p><strong>Quantity:</strong> {lotDetails.quantity} units</p>}
                         
-                        {/* Sample Table */}
                         <table className="w-full mt-4 border-collapse border border-gray-400">
                             <thead>
                                 <tr className="bg-gray-300">
@@ -122,7 +150,11 @@ export default function ActiveBuild({ user, refreshUser }) {
                                 {[...Array(lotDetails?.quantity || 10).keys()].map((i) => {
                                     const unitNumber = i + 1;
                                     return (
-                                        <tr key={unitNumber} className={selectedSample === unitNumber ? "bg-blue-300" : "hover:bg-gray-200"} onClick={() => setSelectedSample(unitNumber)}>
+                                        <tr 
+                                            key={unitNumber} 
+                                            className={selectedSample === unitNumber ? "bg-blue-300" : "hover:bg-gray-200"} 
+                                            onClick={() => setSelectedSample(unitNumber)}
+                                        >
                                             <td className="border border-gray-400 px-2 py-1">{unitNumber}</td>
                                             {specs.map(spec => {
                                                 const inspection = inspections.find(ins => ins.unit_number === unitNumber && ins.spec_name === spec.spec_name);
@@ -139,7 +171,7 @@ export default function ActiveBuild({ user, refreshUser }) {
                         </table>
                     </div>
 
-                    {/* Right Side: Inspections for Selected Sample */}
+                    {/* Right Side: Inspections */}
                     <div className="bg-gray-100 p-4 rounded-lg shadow-md">
                         <h2 className="text-lg font-bold">Inspections for Sample {selectedSample}</h2>
                         {specs.map((spec) => (
@@ -163,7 +195,19 @@ export default function ActiveBuild({ user, refreshUser }) {
                                         <option value="Fail">Fail</option>
                                     </select>
                                 )}
-                                <button onClick={() => handleLogInspection(spec)} className="mt-2 px-4 py-2 bg-green-500 text-white rounded-lg">Log Inspection</button>
+                                <div>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            handleLogInspection(spec, e);
+                                        }}
+                                        className="mt-2 px-4 py-2 bg-green-500 text-white rounded-lg"
+                                    >
+                                        Log Inspection
+                                    </button>
+                                </div>
                             </div>
                         ))}
                     </div>

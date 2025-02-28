@@ -9,10 +9,11 @@ import BuildPage from "./components/BuildPage";
 import EngineerDashboard from "./components/EngineerDashboard";
 import Login from "./components/Login";
 import ActiveBuild from "./components/ActiveBuild";
+import { SampleProvider } from './components/SampleContext'; // Adjust the path as needed
 
 function App() {
   const [user, setUser] = useState(null);
-
+  console.log("App.js rendered at", new Date().toISOString());
   // ✅ Fetch logged-in user
   const refreshUser = async () => {
     try {
@@ -28,6 +29,7 @@ function App() {
   }, []);
 
   return (
+    <SampleProvider>
     <Router>
       <div>
         <Navbar user={user} refreshUser={refreshUser} />
@@ -43,6 +45,7 @@ function App() {
         </Routes>
       </div>
     </Router>
+    </SampleProvider>
   );
 }
 

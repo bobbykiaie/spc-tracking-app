@@ -10,6 +10,20 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const SECRET_KEY = "your_secret_key"; // Replace with an actual secret in .env
 
+const authenticate = (req, res, next) => {
+    const token = req.cookies.auth_token;
+    if (!token) {
+        return res.status(401).json({ error: "Not authenticated" });
+    }
+    try {
+        const decoded = jwt.verify(token, SECRET_KEY);
+        req.user = decoded;
+        next();
+    } catch (error) {
+        res.status(401).json({ error: "Invalid token" });
+    }
+};
+
 // ✅ Enable Middleware
 app.use(cors({
     origin: "http://localhost:5173", // ✅ Allow frontend requests
@@ -319,52 +333,35 @@ app.get('/specs/by-config-mp/:config_number/:mp_number', (req, res) => {
 app.post("/log_inspection", (req, res) => {
     const { username, lot_number, config_number, mp_number, spec_name, inspection_type, unit_number, inspection_value } = req.body;
 
-    // ✅ Step 1: Fetch the spec details to determine pass/fail
-    const getSpecQuery = `
-        SELECT * FROM config_mp_specs 
-        WHERE config_number = ? AND mp_number = ? AND spec_name = ?
+    const checkQuery = `
+        SELECT * FROM inspection_logs 
+        WHERE lot_number = ? AND unit_number = ? AND spec_name = ? AND mp_number = ?
     `;
 
-    db.get(getSpecQuery, [config_number, mp_number, spec_name], (err, spec) => {
+    db.get(checkQuery, [lot_number, unit_number, spec_name, mp_number], (err, row) => {
         if (err) {
-            console.error("❌ Error fetching spec:", err);
-            return res.status(500).json({ error: "Database error fetching spec" });
-        }
-
-        if (!spec) {
-            return res.status(400).json({ error: "Spec not found" });
+            console.error("❌ Error checking inspection log:", err);
+            return res.status(500).json({ error: "Database error" });
         }
 
         let pass_fail = "Fail";
-        let final_inspection_value = inspection_value; // Default to input value
 
-        if (inspection_type === "Variable") {
-            // ✅ Determine pass/fail based on upper & lower specs
-            const lowerSpec = spec.lower_spec !== null ? spec.lower_spec : -Infinity;
-            const upperSpec = spec.upper_spec !== null ? spec.upper_spec : Infinity;
-
-            if (inspection_value >= lowerSpec && inspection_value <= upperSpec) {
-                pass_fail = "Pass";
+        // ✅ Fetch spec limits to determine pass/fail
+        const getSpecQuery = `SELECT * FROM config_mp_specs WHERE config_number = ? AND mp_number = ? AND spec_name = ?`;
+        db.get(getSpecQuery, [config_number, mp_number, spec_name], (specErr, spec) => {
+            if (specErr) {
+                console.error("❌ Error fetching spec:", specErr);
+                return res.status(500).json({ error: "Failed to retrieve spec" });
             }
-        } else if (inspection_type === "Attribute") {
-            // ✅ Ensure both values exist before trimming & comparing
-            const expectedValue = spec.attribute_value ? spec.attribute_value.toString().trim().toLowerCase() : "";
-            const receivedValue = inspection_value ? inspection_value.toString().trim().toLowerCase() : "";
 
-            pass_fail = receivedValue === expectedValue ? "Pass" : "Fail";
-            final_inspection_value = inspection_value; // Keep user input
-        }
-
-        // ✅ Step 2: Check if an inspection for this unit/spec already exists
-        const checkQuery = `
-            SELECT * FROM inspection_logs 
-            WHERE lot_number = ? AND unit_number = ? AND spec_name = ? AND mp_number = ?
-        `;
-
-        db.get(checkQuery, [lot_number, unit_number, spec_name, mp_number], (err, row) => {
-            if (err) {
-                console.error("❌ Error checking inspection log:", err);
-                return res.status(500).json({ error: "Database error" });
+            if (spec) {
+                if (inspection_type === "Variable") {
+                    const lower = spec.lower_spec !== null ? spec.lower_spec : -Infinity;
+                    const upper = spec.upper_spec !== null ? spec.upper_spec : Infinity;
+                    pass_fail = inspection_value >= lower && inspection_value <= upper ? "Pass" : "Fail";
+                } else if (inspection_type === "Attribute") {
+                    pass_fail = inspection_value === spec.attribute_value ? "Pass" : "Fail";
+                }
             }
 
             if (row) {
@@ -374,8 +371,7 @@ app.post("/log_inspection", (req, res) => {
                     SET username = ?, inspection_value = ?, pass_fail = ?, timestamp = CURRENT_TIMESTAMP
                     WHERE lot_number = ? AND unit_number = ? AND spec_name = ? AND mp_number = ?
                 `;
-
-                db.run(updateQuery, [username, final_inspection_value, pass_fail, lot_number, unit_number, spec_name, mp_number], (updateErr) => {
+                db.run(updateQuery, [username, inspection_value, pass_fail, lot_number, unit_number, spec_name, mp_number], (updateErr) => {
                     if (updateErr) {
                         console.error("❌ Error updating inspection:", updateErr);
                         return res.status(500).json({ error: "Failed to update inspection" });
@@ -389,8 +385,7 @@ app.post("/log_inspection", (req, res) => {
                     INSERT INTO inspection_logs (username, lot_number, config_number, mp_number, spec_name, inspection_type, unit_number, inspection_value, pass_fail, timestamp)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 `;
-
-                db.run(insertQuery, [username, lot_number, config_number, mp_number, spec_name, inspection_type, unit_number, final_inspection_value, pass_fail], function (insertErr) {
+                db.run(insertQuery, [username, lot_number, config_number, mp_number, spec_name, inspection_type, unit_number, inspection_value, pass_fail], function (insertErr) {
                     if (insertErr) {
                         console.error("❌ Error inserting inspection:", insertErr);
                         return res.status(500).json({ error: "Failed to log inspection" });
@@ -402,6 +397,7 @@ app.post("/log_inspection", (req, res) => {
         });
     });
 });
+
 
 
 // ✅ Get Lot Details by Lot Number
