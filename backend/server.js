@@ -5,6 +5,8 @@ import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
+import jstat from 'jstat';
+import { spawn } from 'child_process';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -49,6 +51,7 @@ app.get('/', (req, res) => {
     res.send('API is running! 🚀');
 });
 
+// ✅ Get Manufacturing Procedures by Lot Number
 app.get('/manufacturing_procedures/by-lot/:lot_number', (req, res) => {
     const { lot_number } = req.params;
 
@@ -134,6 +137,7 @@ app.post('/login', async (req, res) => {
     });
 });
 
+// ✅ Get Inspection Logs by Lot and MP
 app.get("/inspection_logs/:lot_number/:mp_number", (req, res) => {
     const { lot_number, mp_number } = req.params;
 
@@ -215,6 +219,7 @@ app.get('/configurations/by-br/:br_number', (req, res) => {
     });
 });
 
+// ✅ Get Configurations by YS#
 app.get('/configurations/by-ys/:ys_number', (req, res) => {
     const { ys_number } = req.params;
 
@@ -237,6 +242,8 @@ app.get('/configurations/by-ys/:ys_number', (req, res) => {
         res.json(rows);
     });
 });
+
+// ✅ Get Manufacturing Procedures by Config
 app.get('/manufacturing_procedures/by-config/:config_number', (req, res) => {
     const { config_number } = req.params;
 
@@ -257,6 +264,218 @@ app.get('/manufacturing_procedures/by-config/:config_number', (req, res) => {
             return;
         }
         res.json(rows);
+    });
+});
+
+// Get Normality Test Results for Inspection Data
+app.get('/test/normality/:config_number/:mp_number/:spec_name', authenticate, (req, res) => {
+    const { config_number, mp_number, spec_name } = req.params;
+
+    // Query to get all numerical inspection values for the specified spec
+    const sql = `
+        SELECT inspection_value 
+        FROM inspection_logs 
+        WHERE config_number = ? AND mp_number = ? AND spec_name = ? 
+        AND inspection_type = 'Variable' AND inspection_value IS NOT NULL;
+    `;
+
+    db.all(sql, [config_number, mp_number, spec_name], (err, rows) => {
+        if (err) {
+            console.error('Database Error:', err.message);
+            return res.status(500).json({ error: 'Database query failed' });
+        }
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'No data found for the given parameters' });
+        }
+
+        // Extract numerical values and validate
+        const values = rows.map(row => row.inspection_value).filter(val => !isNaN(val) && val !== null);
+        if (values.length === 0) {
+            return res.status(400).json({ error: 'No valid numeric data for normality test' });
+        }
+
+        console.log('Spawning normality tests with values:', values);
+
+        // Perform all normality tests using Python scripts
+        let shapiroResult = '';
+        let andersonResult = '';
+        let johnsonResult = '';
+
+        // Shapiro-Wilk Test
+        const shapiroPython = spawn('python', ['shapiro_test.py']);
+        shapiroPython.stdin.write(JSON.stringify({ values }));
+        shapiroPython.stdin.end();
+
+        shapiroPython.stdout.on('data', (data) => {
+            shapiroResult += data.toString();
+        });
+
+        shapiroPython.stderr.on('data', (data) => {
+            console.error('Python Error (Shapiro):', data.toString());
+        });
+
+        // Anderson-Darling Test
+        const andersonPython = spawn('python', ['anderson_test.py']);
+        andersonPython.stdin.write(JSON.stringify({ values }));
+        andersonPython.stdin.end();
+
+        andersonPython.stdout.on('data', (data) => {
+            andersonResult += data.toString();
+        });
+
+        andersonPython.stderr.on('data', (data) => {
+            console.error('Python Error (Anderson):', data.toString());
+        });
+
+        // Johnson Transformation Test
+        const johnsonPython = spawn('python', ['johnson_test.py']);
+        johnsonPython.stdin.write(JSON.stringify({ values }));
+        johnsonPython.stdin.end();
+
+        johnsonPython.stdout.on('data', (data) => {
+            johnsonResult += data.toString();
+        });
+
+        johnsonPython.stderr.on('data', (data) => {
+            console.error('Python Error (Johnson):', data.toString());
+        });
+
+        Promise.all([
+            new Promise((resolve) => shapiroPython.on('close', (code) => {
+                if (code !== 0) console.error('Shapiro-Wilk process exited with code:', code);
+                resolve(code);
+            })),
+            new Promise((resolve) => andersonPython.on('close', (code) => {
+                if (code !== 0) console.error('Anderson-Darling process exited with code:', code);
+                resolve(code);
+            })),
+            new Promise((resolve) => johnsonPython.on('close', (code) => {
+                if (code !== 0) console.error('Johnson process exited with code:', code);
+                resolve(code);
+            }))
+        ]).then(([shapiroCode, andersonCode, johnsonCode]) => {
+            if (shapiroCode !== 0 || andersonCode !== 0 || johnsonCode !== 0) {
+                return res.status(500).json({ error: 'Failed to perform normality tests' });
+            }
+
+            try {
+                const shapiroData = JSON.parse(shapiroResult);
+                const andersonData = JSON.parse(andersonResult);
+                const johnsonData = JSON.parse(johnsonResult);
+
+                if (shapiroData.error || andersonData.error || johnsonData.error) {
+                    return res.status(500).json({ error: shapiroData.error || andersonData.error || johnsonData.error });
+                }
+
+                res.status(200).json({
+                    config_number,
+                    mp_number,
+                    spec_name,
+                    inspection_values: values,
+                    tests: {
+                        shapiro_wilk: {
+                            statistic: shapiroData.shapiro_wilk_statistic,
+                            p_value: shapiroData.shapiro_wilk_p_value,
+                            normality: shapiroData.normality
+                        },
+                        anderson_darling: {
+                            statistic: andersonData.anderson_darling_statistic,
+                            p_value: andersonData.anderson_darling_p_value,
+                            normality: andersonData.normality,
+                            critical_values: andersonData.critical_values,
+                            significance_levels: andersonData.significance_levels
+                        },
+                        johnson: {
+                            statistic: johnsonData.johnson_statistic,
+                            p_value: johnsonData.johnson_p_value,
+                            normality: johnsonData.normality,
+                            transformation_params: johnsonData.transformation_params
+                        }
+                    },
+                    qq_plot_data: {
+                        shapiro_wilk: shapiroData.qq_plot_data,
+                        anderson_darling: andersonData.qq_plot_data,
+                        johnson: johnsonData.qq_plot_data
+                    }
+                });
+            } catch (parseError) {
+                console.error('Error parsing Python results:', parseError);
+                res.status(500).json({ error: 'Failed to parse normality test results' });
+            }
+        });
+    });
+});
+
+app.get('/inspection-logs/:config_number', (req, res) => {
+    const { config_number } = req.params;
+
+    // SQL query to fetch inspection logs for the given config_number
+    const query = `
+        SELECT 
+            log_id, 
+            username, 
+            lot_number, 
+            config_number, 
+            mp_number, 
+            spec_name, 
+            inspection_type, 
+            unit_number, 
+            inspection_value, 
+            pass_fail, 
+            timestamp 
+        FROM inspection_logs 
+        WHERE config_number = ? 
+        ORDER BY timestamp DESC
+    `;
+
+    db.all(query, [config_number], (err, rows) => {
+        if (err) {
+            console.error('Error executing query:', err.message);
+            return res.status(500).json({ error: 'Database error' });
+        }
+
+        if (rows.length === 0) {
+            return res.status(404).json({ message: `No inspection logs found for config_number: ${config_number}` });
+        }
+
+        // Return the inspection logs as JSON
+        res.status(200).json({
+            config_number,
+            inspection_logs: rows
+        });
+    });
+});
+
+// ... (previous imports and middleware remain unchanged)
+
+// ✅ Update Lot Quantity
+app.post('/lots/update-quantity', authenticate, (req, res) => {
+    const { lot_number, quantity } = req.body;
+
+    if (!lot_number || quantity === undefined || quantity < 1) {
+        return res.status(400).json({ error: "Lot number and valid quantity are required" });
+    }
+
+    const query = `UPDATE lots SET quantity = ? WHERE lot_number = ?`;
+    db.run(query, [quantity, lot_number], function (err) {
+        if (err) {
+            console.error("❌ Error updating lot quantity:", err.message);
+            return res.status(500).json({ error: "Database error updating lot quantity" });
+        }
+
+        if (this.changes === 0) {
+            return res.status(404).json({ error: "Lot not found" });
+        }
+
+        // Fetch and return the updated lot details
+        db.get(`SELECT lot_number, ys_number, config_number, quantity FROM lots WHERE lot_number = ?`, [lot_number], (err, row) => {
+            if (err) {
+                console.error("❌ Error fetching updated lot:", err.message);
+                return res.status(500).json({ error: "Database error fetching updated lot" });
+            }
+            res.status(200).json({ message: "Lot quantity updated successfully", lot: row });
+        });
     });
 });
 
@@ -304,6 +523,7 @@ app.post('/start_build', (req, res) => {
     });
 });
 
+// ✅ Get Specifications by Config and MP
 app.get('/specs/by-config-mp/:config_number/:mp_number', (req, res) => {
     const { config_number, mp_number } = req.params;
 
@@ -325,9 +545,6 @@ app.get('/specs/by-config-mp/:config_number/:mp_number', (req, res) => {
         res.json(rows);
     });
 });
-
-
-
 
 // ✅ Log Inspection
 app.post("/log_inspection", (req, res) => {
@@ -398,8 +615,6 @@ app.post("/log_inspection", (req, res) => {
     });
 });
 
-
-
 // ✅ Get Lot Details by Lot Number
 app.get('/lots/:lot_number', (req, res) => {
     const { lot_number } = req.params;
@@ -417,12 +632,7 @@ app.get('/lots/:lot_number', (req, res) => {
     });
 });
 
-
-
-// ✅ End a Build
-
-
-// ✅ Get Active Builds
+// ✅ Get Active Builds by Username
 app.get('/active_builds/:username', (req, res) => {
     const { username } = req.params;
 
@@ -439,6 +649,7 @@ app.get('/active_builds/:username', (req, res) => {
         res.json(row || null);
     });
 });
+
 // ✅ Get All Active Builds
 app.get('/active_builds', (req, res) => {
     const query = `
@@ -454,71 +665,187 @@ app.get('/active_builds', (req, res) => {
     });
 });
 
-
-    
+// ✅ Calculate Yield for Lot and MP
 app.get('/yield/:lot_number/:mp_number', (req, res) => {
-  const { lot_number, mp_number } = req.params;
+    const { lot_number, mp_number } = req.params;
 
-  // Query to get total distinct units with at least one inspection (processed units)
-  const totalProcessedUnitsQuery = `
-    SELECT COUNT(DISTINCT unit_number) AS total_processed_units
-    FROM inspection_logs 
-    WHERE lot_number = ? AND mp_number = ?
-  `;
+    // Query to get total distinct units with at least one inspection (processed units)
+    const totalProcessedUnitsQuery = `
+        SELECT COUNT(DISTINCT unit_number) AS total_processed_units
+        FROM inspection_logs 
+        WHERE lot_number = ? AND mp_number = ?
+    `;
 
-  // Query to get distinct units with at least one "Fail" inspection (rejected units)
-  const rejectedUnitsQuery = `
-    SELECT COUNT(DISTINCT unit_number) AS rejected_units
-    FROM inspection_logs 
-    WHERE lot_number = ? AND mp_number = ?
-    AND unit_number IN (
-      SELECT unit_number 
-      FROM inspection_logs 
-      WHERE lot_number = ? AND mp_number = ? AND pass_fail = 'Fail'
-    )
-  `;
+    // Query to get distinct units with at least one "Fail" inspection (rejected units)
+    const rejectedUnitsQuery = `
+        SELECT COUNT(DISTINCT unit_number) AS rejected_units
+        FROM inspection_logs 
+        WHERE lot_number = ? AND mp_number = ?
+        AND unit_number IN (
+            SELECT unit_number 
+            FROM inspection_logs 
+            WHERE lot_number = ? AND mp_number = ? AND pass_fail = 'Fail'
+        )
+    `;
 
-  // Query to get distinct units with no "Fail" inspections (passed units)
-  const passedUnitsQuery = `
-    SELECT COUNT(DISTINCT unit_number) AS passed_units
-    FROM inspection_logs 
-    WHERE lot_number = ? AND mp_number = ?
-    AND unit_number NOT IN (
-      SELECT unit_number 
-      FROM inspection_logs 
-      WHERE lot_number = ? AND mp_number = ? AND pass_fail = 'Fail'
-    )
-  `;
+    // Query to get distinct units with no "Fail" inspections (passed units)
+    const passedUnitsQuery = `
+        SELECT COUNT(DISTINCT unit_number) AS passed_units
+        FROM inspection_logs 
+        WHERE lot_number = ? AND mp_number = ?
+        AND unit_number NOT IN (
+            SELECT unit_number 
+            FROM inspection_logs 
+            WHERE lot_number = ? AND mp_number = ? AND pass_fail = 'Fail'
+        )
+    `;
 
-  db.get(totalProcessedUnitsQuery, [lot_number, mp_number], (err, totalRow) => {
-    if (err) {
-      console.error("❌ Error fetching total processed units:", err);
-      return res.status(500).json({ error: "Database error" });
-    }
-    const totalProcessedUnits = totalRow?.total_processed_units || 0;
-
-    db.get(rejectedUnitsQuery, [lot_number, mp_number, lot_number, mp_number], (err, rejectedRow) => {
-      if (err) {
-        console.error("❌ Error fetching rejected units:", err);
-        return res.status(500).json({ error: "Database error" });
-      }
-      const rejectedUnits = rejectedRow?.rejected_units || 0;
-
-      db.get(passedUnitsQuery, [lot_number, mp_number, lot_number, mp_number], (err, passedRow) => {
+    db.get(totalProcessedUnitsQuery, [lot_number, mp_number], (err, totalRow) => {
         if (err) {
-          console.error("❌ Error fetching passed units:", err);
-          return res.status(500).json({ error: "Database error" });
+            console.error("❌ Error fetching total processed units:", err);
+            return res.status(500).json({ error: "Database error" });
         }
-        const passedUnits = passedRow?.passed_units || 0;
-        const yieldPercentage = totalProcessedUnits > 0 ? ((passedUnits / totalProcessedUnits) * 100).toFixed(2) : 100;
+        const totalProcessedUnits = totalRow?.total_processed_units || 0;
 
-        res.json({ yield: yieldPercentage, totalProcessedUnits, passedUnits, rejectedUnits });
-      });
+        db.get(rejectedUnitsQuery, [lot_number, mp_number, lot_number, mp_number], (err, rejectedRow) => {
+            if (err) {
+                console.error("❌ Error fetching rejected units:", err);
+                return res.status(500).json({ error: "Database error" });
+            }
+            const rejectedUnits = rejectedRow?.rejected_units || 0;
+
+            db.get(passedUnitsQuery, [lot_number, mp_number, lot_number, mp_number], (err, passedRow) => {
+                if (err) {
+                    console.error("❌ Error fetching passed units:", err);
+                    return res.status(500).json({ error: "Database error" });
+                }
+                const passedUnits = passedRow?.passed_units || 0;
+                const yieldPercentage = totalProcessedUnits > 0 ? ((passedUnits / totalProcessedUnits) * 100).toFixed(2) : 100;
+
+                res.json({ yield: yieldPercentage, totalProcessedUnits, passedUnits, rejectedUnits });
+            });
+        });
     });
-  });
 });
+
+// ✅ Get All Configurations
+app.get('/configurations', (req, res) => {
+    const query = `
+        SELECT c.config_number, c.mvd_number, p.product_name
+        FROM configurations c
+        JOIN products p ON c.mvd_number = p.mvd_number
+        ORDER BY c.config_number ASC
+    `;
+    db.all(query, [], (err, rows) => {
+        if (err) {
+            return res.status(500).json({ error: err.message });
+        }
+        res.json(rows);
+    });
+});
+
+// ✅ Get Inspection Logs by Config (Targeted Debugging for MVD789-R)
+app.get('/inspection_logs/by-config/:config_number', (req, res) => {
+    const { config_number } = req.params;
+    console.log(`🟢 Received request for config_number: ${config_number}`);
+    console.log(`🟢 Request headers:`, req.headers);
+    console.log(`🟢 Request params:`, req.params);
+
+    // Use exact match first, then test normalized variations
+    const variations = [
+        config_number.trim(), // Exact as received, trimmed
+        config_number.trim().toUpperCase(),
+        config_number.trim().toLowerCase(),
+    ];
+
+    let rows = [];
+    let foundMatch = false;
+
+    for (const variation of variations) {
+        const query = `
+            SELECT il.*
+            FROM inspection_logs il
+            LEFT JOIN lots l ON il.lot_number = l.lot_number
+            WHERE (l.config_number = ? OR il.config_number = ?)
+            ORDER BY il.timestamp ASC
+        `;
+        db.all(query, [variation, variation], (err, results) => {
+            if (err) {
+                console.error(`❌ Error with variation ${variation}:`, err);
+                return; // Skip this variation on error
+            }
+            if (results.length > 0) {
+                rows = results;
+                foundMatch = true;
+                res.json(rows); // Send response immediately and exit
+                return; // Exit the callback to avoid further processing
+            }
+        });
+    }
+
+    // If no match is found, respond with empty array and extensive debugging for MVD789-R
+    if (!foundMatch) {
+        console.warn(`⚠️ No inspection logs found for config_number: ${config_number}`);
+        // Log detailed data for MVD789-R specifically
+        db.all(`SELECT * FROM lots WHERE config_number = ?`, [config_number], (err, lots) => {
+            console.log(`Lots with exact config_number ${config_number}:`, lots || []);
+        });
+        db.all(`SELECT * FROM lots WHERE config_number LIKE ?`, [`%${config_number}%`], (err, lotsLike) => {
+            console.log(`Lots matching ${config_number} (case-insensitive):`, lotsLike || []);
+        });
+        db.all(`SELECT * FROM inspection_logs WHERE config_number = ?`, [config_number], (err, logs) => {
+            console.log(`Inspection logs with exact config_number ${config_number}:`, logs || []);
+        });
+        db.all(`SELECT * FROM inspection_logs WHERE config_number LIKE ?`, [`%${config_number}%`], (err, logsLike) => {
+            console.log(`Inspection logs matching ${config_number} (case-insensitive):`, logsLike || []);
+        });
+        // Log specific query results for MVD789-R (exact match)
+        db.all(`SELECT il.* FROM inspection_logs il LEFT JOIN lots l ON il.lot_number = l.lot_number WHERE (l.config_number = 'MVD789-R' OR il.config_number = 'MVD789-R') ORDER BY il.timestamp ASC`, [], (err, debugRows) => {
+            console.log("Debug query results for MVD789-R (exact match):", debugRows || []);
+        });
+        // Log detailed joins to check data integrity
+        db.all(`SELECT il.lot_number, il.config_number, l.config_number, il.mp_number, il.spec_name, il.inspection_value, il.pass_fail FROM inspection_logs il LEFT JOIN lots l ON il.lot_number = l.lot_number WHERE (il.config_number LIKE ? OR l.config_number LIKE ?)`, [`%MVD789-R%`, `%MVD789-R%`], (err, joinData) => {
+            console.log("Inspection logs and lots join data for MVD789-R:", joinData || []);
+        });
+        // Log case-specific counts
+        db.all(`SELECT config_number, COUNT(*) as count FROM lots GROUP BY config_number`, [], (err, configCounts) => {
+            console.log("Config_number counts in lots:", configCounts || []);
+        });
+        db.all(`SELECT config_number, COUNT(*) as count FROM inspection_logs GROUP BY config_number`, [], (err, logCounts) => {
+            console.log("Config_number counts in inspection_logs:", logCounts || []);
+        });
+        // Log specific lot numbers and their config_numbers
+        db.all(`SELECT lot_number, config_number FROM lots WHERE config_number LIKE ?`, [`%MVD789-R%`], (err, lotConfigs) => {
+            console.log("Lots and their config_numbers for MVD789-R:", lotConfigs || []);
+        });
+        db.all(`SELECT lot_number, config_number FROM inspection_logs WHERE config_number LIKE ?`, [`%MVD789-R%`], (err, logConfigs) => {
+            console.log("Inspection logs and their config_numbers for MVD789-R:", logConfigs || []);
+        });
+
+        console.log(`🟢 Found ${rows.length} inspection logs for config_number: ${config_number}`);
+        res.json(rows);
+    }
+});
+
+// ✅ Get Inspection Logs by Config, MP, and Spec
+app.get('/inspection_logs/by-config-mp-spec/:config_number/:mp_number/:spec_name', (req, res) => {
+    const { config_number, mp_number, spec_name } = req.params;
+    const query = `
+        SELECT il.*
+        FROM inspection_logs il
+        JOIN lots l ON il.lot_number = l.lot_number
+        WHERE l.config_number = ? AND il.mp_number = ? AND il.spec_name = ?
+        ORDER BY il.timestamp ASC
+    `;
+    db.all(query, [config_number, mp_number, spec_name], (err, rows) => {
+        if (err) {
+            return res.status(500).json({ error: err.message });
+        }
+        res.json(rows);
+    });
+});
+
 // ✅ End a Build by Username
-// ✅ Corrected End Build API
 app.post('/end_build', (req, res) => {
     const { username } = req.body;  // ✅ Use username instead of user_id
 
@@ -541,9 +868,6 @@ app.post('/end_build', (req, res) => {
         res.json({ message: `✅ Build ended for User ${username}` });
     });
 });
-
-
-
 
 // ✅ Start Server
 app.listen(PORT, () => {

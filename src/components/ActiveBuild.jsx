@@ -12,6 +12,7 @@ export default function ActiveBuild({ user, refreshUser }) {
   const [inspectionValues, setInspectionValues] = useState({});
   const [passFailValues, setPassFailValues] = useState({});
   const [yieldData, setYieldData] = useState({ yield: 100, totalUnits: 0, passedUnits: 0, rejectedUnits: 0 });
+  const [isLoading, setIsLoading] = useState(false); // Add isLoading state here
   const navigate = useNavigate(); // Add this for navigation
 
   useEffect(() => {
@@ -132,6 +133,7 @@ export default function ActiveBuild({ user, refreshUser }) {
             unit_number: selectedSample,
             spec_name: spec.spec_name,
             pass_fail: response.data.pass_fail, // Use server-calculated pass_fail
+            inspection_value: response.data.pass_fail === "Pass" || response.data.pass_fail === "Fail" ? null : response.data.inspection_value, // Store inspection_value for Variable type
           },
         ];
       });
@@ -162,6 +164,54 @@ export default function ActiveBuild({ user, refreshUser }) {
     }
   };
 
+  // Function to format the specification placeholder
+  const formatSpecPlaceholder = (spec) => {
+    const upperSpec = spec.upper_spec;
+    const lowerSpec = spec.lower_spec;
+
+    if (upperSpec !== null && lowerSpec !== null) {
+      return `( ${lowerSpec} to ${upperSpec} )`;
+    } else if (upperSpec !== null) {
+      return `( Max ${upperSpec} )`;
+    } else if (lowerSpec !== null) {
+      return `( Min ${lowerSpec} )`;
+    }
+    return `( No specification )`; // Fallback for missing specs
+  };
+
+  // Function to update lot quantity
+  const handleIncreaseQuantity = async () => {
+    if (!lotDetails || !activeBuild) return;
+
+    try {
+      setIsLoading(true);
+      const newQuantity = lotDetails.quantity + 1;
+      const response = await axios.post(
+        "http://localhost:5000/lots/update-quantity",
+        {
+          lot_number: activeBuild.lot_number,
+          quantity: newQuantity,
+        },
+        { withCredentials: true }
+      );
+      console.log("Lot quantity updated:", response.data);
+
+      // Update frontend state with the new quantity
+      setLotDetails(response.data.lot);
+      // Optionally, refetch inspections and yield to ensure consistency
+      await fetchInspectionLogs();
+      await fetchYield();
+    } catch (error) {
+      console.error("❌ Error increasing lot quantity:", error);
+      if (error.response) {
+        console.error("Response data:", error.response.data);
+        console.error("Response status:", error.response.status);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="container mx-auto p-4 bg-gray-50 min-h-screen">
       <h1 className="text-3xl font-bold text-gray-800 mb-6 text-center">Active Build</h1>
@@ -169,38 +219,56 @@ export default function ActiveBuild({ user, refreshUser }) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Left Side: Sample Table */}
           <div className="bg-white p-6 rounded-lg shadow-lg">
-            <h2 className="text-xl font-semibold text-gray-700 mb-4">Current Build</h2>
-            <div className="space-y-2 mb-4">
-              <p><strong className="text-gray-600">Lot Number:</strong> {activeBuild.lot_number}</p>
-              <p><strong className="text-gray-600">Configuration:</strong> {activeBuild.config_number}</p>
-              <p><strong className="text-gray-600">Manufacturing Procedure:</strong> {activeBuild.mp_number}</p>
-              {lotDetails && <p><strong className="text-gray-600">Quantity:</strong> {lotDetails.quantity} units</p>}
+            <div className="flex flex-col md:flex-row gap-6">
+              {/* Current Build Details */}
+              <div className="flex-1">
+                <h2 className="text-xl font-semibold text-gray-700 mb-4">Current Build</h2>
+                <div className="space-y-2 mb-4">
+                  <p><strong className="text-gray-600">Lot Number:</strong> {activeBuild.lot_number}</p>
+                  <p><strong className="text-gray-600">Configuration:</strong> {activeBuild.config_number}</p>
+                  <p><strong className="text-gray-600">Manufacturing Procedure:</strong> {activeBuild.mp_number}</p>
+                  {lotDetails && <p><strong className="text-gray-600">Quantity:</strong> {lotDetails.quantity} units</p>}
+                </div>
+              </div>
+
+              {/* Yield Display (moved to the right side of Current Build) */}
+              <div className="flex-1">
+                <div className="mb-6 p-4 bg-green-100 rounded-lg shadow-inner flex items-center justify-between">
+                  <div>
+                    <p className="text-lg font-semibold text-green-800">Yield: {yieldData.yield}%</p>
+                    <p className="text-sm text-gray-600">
+                      Passed: {yieldData.passedUnits} / {yieldData.totalUnits} units
+                    </p>
+                    <p className="text-sm text-red-600">Rejected: {yieldData.rejectedUnits} units</p>
+                  </div>
+                  <svg
+                    className="w-10 h-10 text-green-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                </div>
+              </div>
             </div>
 
-            {/* Yield Display */}
-            <div className="mb-6 p-4 bg-green-100 rounded-lg shadow-inner flex items-center justify-between">
-              <div>
-                <p className="text-lg font-semibold text-green-800">Yield: {yieldData.yield}%</p>
-                <p className="text-sm text-gray-600">
-                  Passed: {yieldData.passedUnits} / {yieldData.totalUnits} units
-                </p>
-                <p className="text-sm text-red-600">Rejected: {yieldData.rejectedUnits} units</p>
-              </div>
-              <svg
-                className="w-10 h-10 text-green-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
+            {/* Quantity Increase Button (moved below Yield) */}
+            {lotDetails && (
+              <button
+                onClick={handleIncreaseQuantity}
+                className="mb-6 px-4 py-2 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600 transition duration-300"
+                disabled={lotDetails.quantity >= 999 || isLoading}
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-            </div>
+                {isLoading ? "Adding..." : "Add Sample"}
+              </button>
+            )}
 
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
@@ -220,7 +288,7 @@ export default function ActiveBuild({ user, refreshUser }) {
                     return (
                       <tr
                         key={unitNumber}
-                        className={`cursor-pointer ${selectedSample === unitNumber ? "bg-blue-100" : "hover:bg-gray-100"}`}
+                        className={`cursor-pointer ${selectedSample === unitNumber ? "bg-blue-400" : "hover:bg-gray-100"}`}
                         onClick={() => setSelectedSample(unitNumber)}
                       >
                         <td className="border border-gray-300 px-4 py-2">{unitNumber}</td>
@@ -228,9 +296,28 @@ export default function ActiveBuild({ user, refreshUser }) {
                           const inspection = inspections.find(
                             (ins) => ins.unit_number === unitNumber && ins.spec_name === spec.spec_name
                           );
+                          const inspectionValue = inspection?.inspection_value || null;
+                          const passFail = inspection?.pass_fail;
+
                           return (
                             <td key={spec.spec_name} className="border border-gray-300 px-4 py-2 text-center">
-                              {inspection ? (inspection.pass_fail === "Pass" ? "✅" : "❌") : ""}
+                              {inspection ? (
+                                <div className="flex items-center justify-center space-x-2">
+                                  <span
+                                    className={`inline-block ${passFail === "Pass" ? "text-green-500" : "text-red-500"}`}
+                                    aria-label={`${passFail === "Pass" ? "Pass" : "Fail"}`}
+                                  >
+                                    {passFail === "Pass" ? "✅" : "❌"}
+                                  </span>
+                                  {inspectionValue !== null && (
+                                    <span className="text-sm text-gray-600 bg-gray-100 px-2 py-1 rounded-full">
+                                      {inspectionValue}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                ""
+                              )}
                             </td>
                           );
                         })}
@@ -259,10 +346,12 @@ export default function ActiveBuild({ user, refreshUser }) {
                 {spec.type === "Variable" ? (
                   <input
                     type="number"
-                    placeholder="Enter Inspection Value"
+                    placeholder={formatSpecPlaceholder(spec)}
                     value={inspectionValues[spec.spec_name] || ""}
                     onChange={(e) => setInspectionValues({ ...inspectionValues, [spec.spec_name]: e.target.value })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 hide-spinner"
+                    step="any" // Allows any decimal value
+                    aria-label={`${spec.spec_name} - ${formatSpecPlaceholder(spec)}`}
                   />
                 ) : (
                   <select
