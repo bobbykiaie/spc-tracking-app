@@ -7,10 +7,16 @@ import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
 import jstat from 'jstat';
 import { spawn } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Polyfill __dirname for ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const SECRET_KEY = "your_secret_key"; // Replace with an actual secret in .env
+const SECRET_KEY = process.env.SECRET_KEY || "f2352172c9170e139cc3e16eaee9b85f0ad88d869121fa350d3c39b4d55acdee";
 
 const authenticate = (req, res, next) => {
     const token = req.cookies.auth_token;
@@ -27,24 +33,61 @@ const authenticate = (req, res, next) => {
 };
 
 // ✅ Enable Middleware
+// ✅ Enable Middleware
 app.use(cors({
-    origin: "http://localhost:5173", // ✅ Allow frontend requests
-    credentials: true, // ✅ Allow cookies, authorization headers
+    origin: process.env.NODE_ENV === 'production' 
+        ? 'https://bobbykiaie.github.io/spc-tracking-app' 
+        : ['http://localhost:5173', 'https://bobbykiaie.github.io/spc-tracking-app'], // Allow both local and production origins in development
+    credentials: true, // Allow cookies, authorization headers
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
 }));
-app.use(express.json()); // ✅ Parses incoming JSON requests
-app.use(express.urlencoded({ extended: true })); // ✅ Parses URL-encoded data
-app.use(cookieParser()); // ✅ Required for reading cookies
+app.use(express.json()); // Parses incoming JSON requests
+app.use(express.urlencoded({ extended: true })); // Parses URL-encoded data
+app.use(cookieParser()); // Required for reading cookies
 
 // ✅ Connect to SQLite Database
-const db = new sqlite3.Database('./manufacturing.db', sqlite3.OPEN_READWRITE, (err) => {
-    if (err) {
-        console.error('❌ Error connecting to database:', err.message);
-    } else {
-        console.log('✅ Connected to SQLite database');
-    }
+const dbPath = process.env.NODE_ENV === 'production'
+  ? '/var/data/manufacturing.db' // Render persistent disk path
+  : path.join(__dirname, 'manufacturing.db');
+
+const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE, (err) => {
+    if (err) console.error('❌ Error connecting to database:', err.message);
+    else console.log('✅ Connected to SQLite database');
 });
+
+// Python Script Handler (use 'python3' for Render, 'python' for local Windows)
+const runPythonScript = (scriptName, data) => {
+    return new Promise((resolve, reject) => {
+        const pythonCommand = process.env.NODE_ENV === 'production' ? 'python3' : 'python';
+        const pythonProcess = spawn(pythonCommand, [path.join(__dirname, scriptName)]);
+
+        let output = '';
+        pythonProcess.stdout.on('data', (data) => {
+            output += data.toString();
+        });
+
+        pythonProcess.stderr.on('data', (data) => {
+            console.error(`Python Error (${scriptName}):`, data.toString());
+        });
+
+        // Send data to Python script
+        pythonProcess.stdin.write(JSON.stringify(data));
+        pythonProcess.stdin.end();
+
+        pythonProcess.on('close', (code) => {
+            if (code !== 0) {
+                reject(new Error(`Python script ${scriptName} exited with code ${code}`));
+            } else {
+                try {
+                    resolve(JSON.parse(output));
+                } catch (e) {
+                    reject(new Error(`Failed to parse ${scriptName} output: ${e.message}`));
+                }
+            }
+        });
+    });
+};
 
 // ✅ Test Route
 app.get('/', (req, res) => {
@@ -267,7 +310,7 @@ app.get('/manufacturing_procedures/by-config/:config_number', (req, res) => {
     });
 });
 
-// Get Normality Test Results for Inspection Data
+// Revert to Original Normality Test Route (with Windows compatibility fix)
 app.get('/test/normality/:config_number/:mp_number/:spec_name', authenticate, (req, res) => {
     const { config_number, mp_number, spec_name } = req.params;
 
@@ -303,7 +346,7 @@ app.get('/test/normality/:config_number/:mp_number/:spec_name', authenticate, (r
         let johnsonResult = '';
 
         // Shapiro-Wilk Test
-        const shapiroPython = spawn('python', ['shapiro_test.py']);
+        const shapiroPython = spawn(process.env.NODE_ENV === 'production' ? 'python3' : 'python', ['shapiro_test.py']);
         shapiroPython.stdin.write(JSON.stringify({ values }));
         shapiroPython.stdin.end();
 
@@ -316,7 +359,7 @@ app.get('/test/normality/:config_number/:mp_number/:spec_name', authenticate, (r
         });
 
         // Anderson-Darling Test
-        const andersonPython = spawn('python', ['anderson_test.py']);
+        const andersonPython = spawn(process.env.NODE_ENV === 'production' ? 'python3' : 'python', ['anderson_test.py']);
         andersonPython.stdin.write(JSON.stringify({ values }));
         andersonPython.stdin.end();
 
@@ -329,7 +372,7 @@ app.get('/test/normality/:config_number/:mp_number/:spec_name', authenticate, (r
         });
 
         // Johnson Transformation Test
-        const johnsonPython = spawn('python', ['johnson_test.py']);
+        const johnsonPython = spawn(process.env.NODE_ENV === 'production' ? 'python3' : 'python', ['johnson_test.py']);
         johnsonPython.stdin.write(JSON.stringify({ values }));
         johnsonPython.stdin.end();
 
@@ -406,7 +449,6 @@ app.get('/test/normality/:config_number/:mp_number/:spec_name', authenticate, (r
         });
     });
 });
-
 app.get('/inspection-logs/:config_number', (req, res) => {
     const { config_number } = req.params;
 
@@ -446,8 +488,6 @@ app.get('/inspection-logs/:config_number', (req, res) => {
         });
     });
 });
-
-// ... (previous imports and middleware remain unchanged)
 
 // ✅ Update Lot Quantity
 app.post('/lots/update-quantity', authenticate, (req, res) => {
