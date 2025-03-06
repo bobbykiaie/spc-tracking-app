@@ -1,12 +1,9 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-    content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"], // Ensure Tailwind scans all files
+    content: ['./src/**/*.{js,jsx,ts,tsx}', './public/index.html'],
+    safelist: ['space-x-8'], // Temporary for debugging
     theme: {
-      extend: {
-        fontFamily: {
-          sans: ['Inter', 'sans-serif'], // Use Inter as default font
-        },
-      },
+      extend: {},
     },
     plugins: [],
   };
