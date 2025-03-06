@@ -17,7 +17,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 5000;
 const SECRET_KEY = process.env.SECRET_KEY || "f2352172c9170e139cc3e16eaee9b85f0ad88d869121fa350d3c39b4d55acdee";
-const cors = require('cors'); 
+
 const authenticate = (req, res, next) => {
     const token = req.cookies.auth_token;
     if (!token) {
