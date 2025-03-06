@@ -31,15 +31,10 @@ const authenticate = (req, res, next) => {
         res.status(401).json({ error: "Invalid token" });
     }
 };
-const allowedOrigins = [
-    'http://localhost:5173', 
-    'https://bobbykiaie.github.io'
-];
+const allowedOrigins = ['http://localhost:5173', 'https://bobbykiaie.github.io'];
 
-// ✅ Enable Middleware
 app.use(cors({
     origin: (origin, callback) => {
-        // Allow requests with no origin (e.g., Postman, curl) or if the origin is in the allowed list
         if (!origin || allowedOrigins.includes(origin)) {
             callback(null, true);
         } else {
@@ -50,6 +45,7 @@ app.use(cors({
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
 }));
+
 app.use(express.json()); // Parses incoming JSON requests
 app.use(express.urlencoded({ extended: true })); // Parses URL-encoded data
 app.use(cookieParser()); // Required for reading cookies
