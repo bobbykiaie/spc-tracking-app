@@ -31,10 +31,11 @@ const authenticate = (req, res, next) => {
         res.status(401).json({ error: "Invalid token" });
     }
 };
-const allowedOrigins = process.env.NODE_ENV === 'production'
-    ? ['https://bobbykiaie.github.io']
-    : ['http://localhost:5173', 'https://bobbykiaie.github.io'];
-// ✅ Enable Middleware
+const allowedOrigins = [
+    'http://localhost:5173', 
+    'https://bobbykiaie.github.io'
+];
+
 // ✅ Enable Middleware
 app.use(cors({
     origin: (origin, callback) => {
