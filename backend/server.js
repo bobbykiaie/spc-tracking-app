@@ -17,7 +17,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 5000;
 const SECRET_KEY = process.env.SECRET_KEY || "f2352172c9170e139cc3e16eaee9b85f0ad88d869121fa350d3c39b4d55acdee";
-
+const cors = require('cors'); 
 const authenticate = (req, res, next) => {
     const token = req.cookies.auth_token;
     if (!token) {
@@ -31,14 +31,21 @@ const authenticate = (req, res, next) => {
         res.status(401).json({ error: "Invalid token" });
     }
 };
-
+const allowedOrigins = process.env.NODE_ENV === 'production'
+    ? ['https://bobbykiaie.github.io']
+    : ['http://localhost:5173', 'https://bobbykiaie.github.io'];
 // ✅ Enable Middleware
 // ✅ Enable Middleware
 app.use(cors({
-    origin: process.env.NODE_ENV === 'production' 
-        ? 'https://bobbykiaie.github.io/spc-tracking-app' 
-        : ['http://localhost:5173', 'https://bobbykiaie.github.io/spc-tracking-app'], // Allow both local and production origins in development
-    credentials: true, // Allow cookies, authorization headers
+    origin: (origin, callback) => {
+        // Allow requests with no origin (e.g., Postman, curl) or if the origin is in the allowed list
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
 }));
