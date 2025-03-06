@@ -21,8 +21,10 @@ export default function Reports({ user }) {
   const [error, setError] = useState(null); // Error state for fetch failures
 
   // **API Base URL** (Updated to match new backend)
-  const API_BASE_URL = '${API_BASE_URL}';
-
+  const API_BASE_URL =
+  window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+    ? "http://localhost:5000"
+    : "https://spc-tracking-app-backend.onrender.com";
   // **Fetch Configurations**
   useEffect(() => {
     const fetchConfigs = async () => {

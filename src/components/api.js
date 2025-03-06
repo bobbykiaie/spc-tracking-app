@@ -2,7 +2,9 @@ import axios from 'axios';
 
 // Use Vite environment variable with fallback for runtime detection
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || (isLocalhost ? '${API_BASE_URL}' : 'https://spc-tracking-app-backend.onrender.com');
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 
+(isLocalhost ? "http://localhost:5000" : "https://spc-tracking-app-backend.onrender.com");
+
 
 // Create an Axios instance with the base URL and credentials
 const api = axios.create({
