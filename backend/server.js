@@ -19,17 +19,21 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const SECRET_KEY = process.env.SECRET_KEY || "f2352172c9170e139cc3e16eaee9b85f0ad88d869121fa350d3c39b4d55acdee";
 
-const allowedOrigins = ['http://localhost:5173', 'https://bobbykiaie.github.io','https://spc-tracking-app.onrender.com/'];
+const allowedOrigins = [
+    "http://localhost:5173", 
+    "https://bobbykiaie.github.io",
+    "https://spc-tracking-app.onrender.com"
+];
 
 app.use(cors({
-    origin: (origin, callback) => {
+    origin: function (origin, callback) {
         if (!origin || allowedOrigins.includes(origin)) {
             callback(null, true);
         } else {
             callback(new Error('Not allowed by CORS'));
         }
     },
-    credentials: true,
+    credentials: true,  // ✅ Required for authentication to work
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
 }));
@@ -245,6 +249,7 @@ app.get('/current_user', (req, res) => {
         res.status(401).json({ error: "Invalid token" });
     }
 });
+
 
 // ✅ User Logout
 app.post('/logout', (req, res) => {
