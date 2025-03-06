@@ -1,11 +1,15 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
+const API_BASE_URL =
+  window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+    ? "http://localhost:5000"
+    : "https://spc-tracking-app-backend.onrender.com";
 
 export default function Navbar({ user, refreshUser }) {
   const handleLogout = async () => {
     try {
-      await axios.post("http://localhost:5000/logout", {}, { withCredentials: true });
+      await axios.post(`${API_BASE_URL}/logout`, {}, { withCredentials: true });
       refreshUser(); // Refresh user state immediately
     } catch (error) {
       console.error("❌ Logout error:", error);

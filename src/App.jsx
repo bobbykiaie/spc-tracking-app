@@ -13,10 +13,14 @@ import { SampleProvider } from './components/SampleContext'; // Adjust path as n
 
 function App() {
     const [user, setUser] = useState(null);
-
+    const API_BASE_URL =
+    window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+      ? "http://localhost:5000"
+      : "https://spc-tracking-app-backend.onrender.com";
+  
     const refreshUser = async () => {
         try {
-            const response = await axios.get('http://localhost:5000/current_user', { withCredentials: true });
+            const response = await axios.get(`${API_BASE_URL}/current_user`, { withCredentials: true });
             setUser(response.data);
         } catch (error) {
             console.error('Error refreshing user:', error);

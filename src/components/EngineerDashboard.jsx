@@ -10,7 +10,7 @@ export default function EngineerDashboard() {
 
     const fetchActiveBuilds = async () => {
         try {
-            const response = await axios.get("http://localhost:5000/active_builds");
+            const response = await axios.get("${API_BASE_URL}/active_builds");
             setActiveBuilds(response.data);
         } catch (error) {
             console.error("Error fetching active builds:", error);

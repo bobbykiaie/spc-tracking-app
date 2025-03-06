@@ -14,7 +14,7 @@ export default function Admin() {
 
   const fetchProducts = async () => {
     try {
-      const response = await axios.get("http://localhost:5000/products");
+      const response = await axios.get("${API_BASE_URL}/products");
       setProducts(response.data);
     } catch (error) {
       console.error("Error fetching products:", error);
@@ -25,7 +25,7 @@ export default function Admin() {
   const handleSelectProduct = async (product) => {
     setSelectedProduct(product);
     try {
-      const response = await axios.get(`http://localhost:5000/manufacturing_procedures/${product.mvd_number}`);
+      const response = await axios.get(`${API_BASE_URL}/manufacturing_procedures/${product.mvd_number}`);
       setMpList(response.data);
     } catch (error) {
       console.error("Error fetching MPs:", error);
@@ -40,7 +40,7 @@ export default function Admin() {
       return;
     }
     try {
-      await axios.post("http://localhost:5000/config_mp_specs", {
+      await axios.post("${API_BASE_URL}/config_mp_specs", {
         config_number: selectedProduct.mvd_number,
         mp_number: newMP.mp_number,
         spec_detail: newMP.spec_detail,
@@ -56,7 +56,7 @@ export default function Admin() {
   const handleDeleteMP = async (mp_number) => {
     if (!window.confirm("Are you sure you want to remove this MP?")) return;
     try {
-      await axios.delete("http://localhost:5000/config_mp_specs", {
+      await axios.delete("${API_BASE_URL}/config_mp_specs", {
         data: { config_number: selectedProduct.mvd_number, mp_number },
       });
       handleSelectProduct(selectedProduct); // Refresh MP list

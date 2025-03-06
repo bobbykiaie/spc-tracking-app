@@ -14,6 +14,10 @@ export default function ActiveBuild({ user, refreshUser }) {
   const [yieldData, setYieldData] = useState({ yield: 100, totalUnits: 0, passedUnits: 0, rejectedUnits: 0 });
   const [isLoading, setIsLoading] = useState(false); // Add isLoading state here
   const navigate = useNavigate(); // Add this for navigation
+  const API_BASE_URL =
+  window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+    ? "http://localhost:5000"
+    : "https://spc-tracking-app-backend.onrender.com";
 
   useEffect(() => {
     console.log("ActiveBuild mounted or updated at", new Date().toISOString());
@@ -36,7 +40,7 @@ export default function ActiveBuild({ user, refreshUser }) {
 
   const fetchActiveBuild = async (username) => {
     try {
-      const response = await axios.get(`http://localhost:5000/active_builds/${username}`);
+      const response = await axios.get(`${API_BASE_URL}/active_builds/${username}`);
       setActiveBuild(response.data);
       if (response.data) {
         fetchLotDetails(response.data.lot_number);
@@ -52,7 +56,7 @@ export default function ActiveBuild({ user, refreshUser }) {
 
   const fetchLotDetails = async (lotNumber) => {
     try {
-      const response = await axios.get(`http://localhost:5000/lots/${lotNumber}`);
+      const response = await axios.get(`${API_BASE_URL}/lots/${lotNumber}`);
       setLotDetails(response.data);
     } catch (error) {
       console.error("Error fetching lot details:", error);
@@ -61,7 +65,7 @@ export default function ActiveBuild({ user, refreshUser }) {
 
   const fetchSpecs = async (configNumber, mpNumber) => {
     try {
-      const response = await axios.get(`http://localhost:5000/specs/by-config-mp/${configNumber}/${mpNumber}`);
+      const response = await axios.get(`${API_BASE_URL}/specs/by-config-mp/${configNumber}/${mpNumber}`);
       setSpecs(response.data);
     } catch (error) {
       console.error("Error fetching specs:", error);
@@ -72,7 +76,7 @@ export default function ActiveBuild({ user, refreshUser }) {
     if (activeBuild) {
       try {
         const response = await axios.get(
-          `http://localhost:5000/inspection_logs/${activeBuild.lot_number}/${activeBuild.mp_number}`
+          `${API_BASE_URL}/inspection_logs/${activeBuild.lot_number}/${activeBuild.mp_number}`
         );
         setInspections(response.data || []);
       } catch (error) {
@@ -86,7 +90,7 @@ export default function ActiveBuild({ user, refreshUser }) {
     if (activeBuild) {
       try {
         const response = await axios.get(
-          `http://localhost:5000/yield/${activeBuild.lot_number}/${activeBuild.mp_number}`
+          `${API_BASE_URL}/yield/${activeBuild.lot_number}/${activeBuild.mp_number}`
         );
         setYieldData(response.data);
       } catch (error) {
@@ -107,7 +111,7 @@ export default function ActiveBuild({ user, refreshUser }) {
     try {
       console.log("Sending POST to /log_inspection...");
       const response = await axios.post(
-        "http://localhost:5000/log_inspection",
+        `${API_BASE_URL}/log_inspection`,
         {
           username: user.username,
           lot_number: activeBuild.lot_number,
@@ -153,7 +157,7 @@ export default function ActiveBuild({ user, refreshUser }) {
   const handleEndBuild = async () => {
     try {
       await axios.post(
-        "http://localhost:5000/end_build",
+        `${API_BASE_URL}/end_build`,
         { username: user.username },
         { withCredentials: true }
       );
@@ -187,7 +191,7 @@ export default function ActiveBuild({ user, refreshUser }) {
       setIsLoading(true);
       const newQuantity = lotDetails.quantity + 1;
       const response = await axios.post(
-        "http://localhost:5000/lots/update-quantity",
+        `${API_BASE_URL}/lots/update-quantity`,
         {
           lot_number: activeBuild.lot_number,
           quantity: newQuantity,

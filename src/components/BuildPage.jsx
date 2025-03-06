@@ -16,7 +16,7 @@ export default function BuildPage() {
     // ✅ Fetch configs if missing (fallback if user directly navigates to /build/:config_number/:mp_number)
     useEffect(() => {
         if (!configs.length && config_number) {
-            axios.get(`http://localhost:5000/configurations/by-ys/${config_number}`)
+            axios.get(`${API_BASE_URL}/configurations/by-ys/${config_number}`)
                 .then(response => setConfigs(response.data))
                 .catch(error => console.error("Error fetching configurations:", error));
         }
@@ -38,7 +38,7 @@ export default function BuildPage() {
 
     const fetchMPs = async (configNumber) => {
         try {
-            const response = await axios.get(`http://localhost:5000/manufacturing_procedures/by-config/${configNumber}`);
+            const response = await axios.get(`${API_BASE_URL}/manufacturing_procedures/by-config/${configNumber}`);
             setMpList(response.data);
         } catch (error) {
             setError("Error fetching MPs.");
@@ -47,7 +47,7 @@ export default function BuildPage() {
 
     const fetchMPDetails = async (configNumber, mpNumber) => {
         try {
-            const response = await axios.get(`http://localhost:5000/manufacturing_procedures/by-config/${configNumber}`);
+            const response = await axios.get(`${API_BASE_URL}/manufacturing_procedures/by-config/${configNumber}`);
             const mpData = response.data.find(mp => mp.mp_number === mpNumber);
             if (mpData) {
                 setMpDetails(mpData);
@@ -62,7 +62,7 @@ export default function BuildPage() {
     const handleSelectMP = async (config, mp) => {
         try {
             // ✅ Send request to start build
-            await axios.post("http://localhost:5000/start_build", {
+            await axios.post("${API_BASE_URL}/start_build", {
                 user_id: 1,  // Replace with the logged-in user ID
                 lot_number: config,
                 mp_number: mp

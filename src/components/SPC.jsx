@@ -49,7 +49,11 @@ export default function SPC({ user }) {
   const [error, setError] = useState(null);
 
   // Configure axios base URL for backend
-  const API_BASE_URL = 'http://localhost:5000';
+  const API_BASE_URL =
+  window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+    ? "http://localhost:5000"
+    : "https://spc-tracking-app-backend.onrender.com";
+
 
   // Configure Axios to include credentials (cookies) for all requests
   axios.defaults.withCredentials = true; // Ensure cookies (e.g., auth_token) are sent with every request

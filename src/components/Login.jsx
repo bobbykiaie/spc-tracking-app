@@ -11,10 +11,14 @@ export default function Login({ refreshUser }) {
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
-
+    const API_BASE_URL =
+    window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+      ? "http://localhost:5000"
+      : "https://spc-tracking-app-backend.onrender.com";
+  
     try {
       const response = await axios.post(
-        "http://localhost:5000/login",
+        `${API_BASE_URL}/login`,
         { username, password },
         { withCredentials: true }
       );

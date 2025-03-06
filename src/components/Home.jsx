@@ -9,6 +9,10 @@ export default function Home({ user, refreshUser }) {
   const [error, setError] = useState("");
   const [activeBuild, setActiveBuild] = useState(null);
   const navigate = useNavigate();
+  const API_BASE_URL =
+  window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+    ? "http://localhost:5000"
+    : "https://spc-tracking-app-backend.onrender.com";
 
   useEffect(() => {
     if (user) {
@@ -20,7 +24,7 @@ export default function Home({ user, refreshUser }) {
 
   const fetchActiveBuild = async (username) => {
     try {
-      const response = await axios.get("http://localhost:5000/active_builds", { withCredentials: true });
+      const response = await axios.get(`${API_BASE_URL}/active_builds`, { withCredentials: true });
       const userBuild = response.data.find((b) => b.username === username);
       setActiveBuild(userBuild || null);
     } catch (error) {
@@ -35,7 +39,7 @@ export default function Home({ user, refreshUser }) {
     }
 
     try {
-      const response = await axios.get(`http://localhost:5000/manufacturing_procedures/by-lot/${lotNumber}`);
+      const response = await axios.get(`${API_BASE_URL}/manufacturing_procedures/by-lot/${lotNumber}`);
       if (response.data.length > 0) {
         const uniqueMps = Array.from(
           new Set(response.data.map((mp) => mp.mp_number))
@@ -61,7 +65,7 @@ export default function Home({ user, refreshUser }) {
 
     try {
       await axios.post(
-        "http://localhost:5000/start_build",
+        `${API_BASE_URL}/start_build`,
         {
           username: user.username,
           lot_number: lotNumber,

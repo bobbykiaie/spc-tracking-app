@@ -21,7 +21,7 @@ export default function Reports({ user }) {
   const [error, setError] = useState(null); // Error state for fetch failures
 
   // **API Base URL** (Updated to match new backend)
-  const API_BASE_URL = 'http://localhost:5000';
+  const API_BASE_URL = '${API_BASE_URL}';
 
   // **Fetch Configurations**
   useEffect(() => {

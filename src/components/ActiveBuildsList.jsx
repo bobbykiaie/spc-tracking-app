@@ -17,7 +17,7 @@ function ActiveBuildsList({ user }) {
     useEffect(() => {
         const fetchActiveBuilds = async () => {
             try {
-                const response = await axios.get('http://localhost:5000/active_builds');
+                const response = await axios.get(`${API_BASE_URL}/active_builds`);
                 setActiveBuilds(response.data);
                 setLoading(false);
             } catch (err) {
@@ -36,9 +36,9 @@ function ActiveBuildsList({ user }) {
                 setDetailsError(null);
                 try {
                     const [lotResponse, specsResponse, inspectionsResponse] = await Promise.all([
-                        axios.get(`http://localhost:5000/lots/${selectedBuild.lot_number}`),
-                        axios.get(`http://localhost:5000/specs/by-config-mp/${selectedBuild.config_number}/${selectedBuild.mp_number}`),
-                        axios.get(`http://localhost:5000/inspection_logs/${selectedBuild.lot_number}/${selectedBuild.mp_number}`)
+                        axios.get(`${API_BASE_URL}/lots/${selectedBuild.lot_number}`),
+                        axios.get(`${API_BASE_URL}/specs/by-config-mp/${selectedBuild.config_number}/${selectedBuild.mp_number}`),
+                        axios.get(`${API_BASE_URL}/inspection_logs/${selectedBuild.lot_number}/${selectedBuild.mp_number}`)
                     ]);
                     setLotDetails(lotResponse.data);
                     setSpecs(specsResponse.data);
