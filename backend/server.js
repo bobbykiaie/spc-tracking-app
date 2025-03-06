@@ -18,19 +18,6 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const SECRET_KEY = process.env.SECRET_KEY || "f2352172c9170e139cc3e16eaee9b85f0ad88d869121fa350d3c39b4d55acdee";
 
-const authenticate = (req, res, next) => {
-    const token = req.cookies.auth_token;
-    if (!token) {
-        return res.status(401).json({ error: "Not authenticated" });
-    }
-    try {
-        const decoded = jwt.verify(token, SECRET_KEY);
-        req.user = decoded;
-        next();
-    } catch (error) {
-        res.status(401).json({ error: "Invalid token" });
-    }
-};
 const allowedOrigins = ['http://localhost:5173', 'https://bobbykiaie.github.io'];
 
 app.use(cors({
@@ -45,6 +32,21 @@ app.use(cors({
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
 }));
+
+const authenticate = (req, res, next) => {
+    const token = req.cookies.auth_token;
+    if (!token) {
+        return res.status(401).json({ error: "Not authenticated" });
+    }
+    try {
+        const decoded = jwt.verify(token, SECRET_KEY);
+        req.user = decoded;
+        next();
+    } catch (error) {
+        res.status(401).json({ error: "Invalid token" });
+    }
+};
+
 
 app.use(express.json()); // Parses incoming JSON requests
 app.use(express.urlencoded({ extended: true })); // Parses URL-encoded data
@@ -156,33 +158,34 @@ app.post('/login', async (req, res) => {
 
     db.get(query, [username], async (err, user) => {
         if (err) {
-            console.error("❌ Database Error:", err.message);
             return res.status(500).json({ error: err.message });
         }
         if (!user) {
-            console.log("❌ User not found:", username);
             return res.status(401).json({ error: "User not found" });
         }
 
-        console.log("✅ Found user:", user.username);
         const match = await bcrypt.compare(password, user.password);
-
         if (!match) {
-            console.log("❌ Incorrect password");
             return res.status(401).json({ error: "Incorrect password" });
         }
 
-        console.log("✅ Password Matched! Logging in...");
         const token = jwt.sign(
             { user_id: user.user_id, username: user.username, role: user.role },
             SECRET_KEY,
             { expiresIn: "1h" }
         );
 
-        res.cookie("auth_token", token, { httpOnly: true, secure: false, maxAge: 3600000 });
+        res.cookie("auth_token", token, {
+            httpOnly: true,
+            secure: true,  // ✅ Secure in production (HTTPS only)
+            sameSite: "None",  // ✅ Required for cross-origin authentication
+            maxAge: 3600000
+        });
+
         res.json({ message: "✅ Login successful!", role: user.role });
     });
 });
+
 
 // ✅ Get Inspection Logs by Lot and MP
 app.get("/inspection_logs/:lot_number/:mp_number", (req, res) => {
@@ -210,29 +213,28 @@ app.get("/inspection_logs/:lot_number/:mp_number", (req, res) => {
 
 // ✅ Get Current Logged-in User
 app.get('/current_user', (req, res) => {
-    res.setHeader("Access-Control-Allow-Origin", "http://localhost:5173");
+    const origin = req.headers.origin;
+    if (allowedOrigins.includes(origin)) {
+        res.setHeader("Access-Control-Allow-Origin", origin);
+    }
     res.setHeader("Access-Control-Allow-Credentials", "true");
 
     const token = req.cookies.auth_token;
-
     if (!token) {
-        console.log("❌ No token found in cookies");
         return res.status(401).json({ error: "Not authenticated" });
     }
 
     try {
         const decoded = jwt.verify(token, SECRET_KEY);
-        console.log("✅ User authenticated:", decoded);
         res.json({ user_id: decoded.user_id, username: decoded.username, role: decoded.role });
     } catch (error) {
-        console.log("❌ Invalid token:", error.message);
         res.status(401).json({ error: "Invalid token" });
     }
 });
 
 // ✅ User Logout
 app.post('/logout', (req, res) => {
-    res.clearCookie("auth_token");
+    res.clearCookie("auth_token", { secure: true, sameSite: "None" });
     res.json({ message: "✅ Logged out successfully!" });
 });
 
