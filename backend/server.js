@@ -9,6 +9,7 @@ import jstat from 'jstat';
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 // Polyfill __dirname for ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -53,13 +54,26 @@ app.use(express.urlencoded({ extended: true })); // Parses URL-encoded data
 app.use(cookieParser()); // Required for reading cookies
 
 // ✅ Connect to SQLite Database
+
+const dbDir = '/var/data';
 const dbPath = process.env.NODE_ENV === 'production'
   ? '/var/data/manufacturing.db' // Render persistent disk path
   : path.join(__dirname, 'manufacturing.db');
 
+// ✅ Ensure directory exists before creating the database
+if (process.env.NODE_ENV === 'production') {
+    if (!fs.existsSync(dbDir)) {
+        console.log(`📂 Creating database directory: ${dbDir}`);
+        fs.mkdirSync(dbDir, { recursive: true });
+    }
+}
+
 const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE, (err) => {
-    if (err) console.error('❌ Error connecting to database:', err.message);
-    else console.log('✅ Connected to SQLite database');
+    if (err) {
+        console.error('❌ Error connecting to database:', err.message);
+    } else {
+        console.log(`✅ Connected to SQLite database at ${dbPath}`);
+    }
 });
 
 // Python Script Handler (use 'python3' for Render, 'python' for local Windows)
